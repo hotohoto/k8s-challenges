@@ -1,0 +1,104 @@
+# https://github.com/envygeeks/jekyll-docker/blob/master/repos/jekyll/Dockerfile
+
+# kubectl config set-credentials martin --client-certificate=/root/martin.crt --client-key=/root/martin.key
+# kubectl config set-context developer --cluster=kubernetes --user=martin --namespace=development
+# kubectl config use-context developer
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: development
+  name: developer-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "persistentvolumeclaims", "pods"]
+    verbs:
+      [
+        "create",
+        "get",
+        "list",
+        "watch",
+        "update",
+        "patch",
+        "delete",
+        "deletecollection",
+      ]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-rolebinding
+  namespace: development
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: developer-role
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: martin
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jekyll-site
+  namespace: development
+spec:
+  storageClassName: local-storage # Empty string must be explicitly set otherwise default StorageClass will be set
+  volumeName: jekyll-site
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "jekyll"
+  namespace: development
+  labels:
+    run: "jekyll"
+spec:
+  containers:
+    - name: jekyll
+      image: "kodekloud/jekyll-serve"
+      ports:
+        - containerPort: 80
+          name: http
+      volumeMounts:
+        - name: "site"
+          mountPath: "/site"
+  initContainers:
+    - name: copy-jekyll-site
+      image: kodekloud/jekyll
+      command:
+        - "jekyll"
+        - "new"
+        - "/site"
+      volumeMounts:
+        - mountPath: "/site"
+          name: "site"
+  volumes:
+    - name: "site"
+      persistentVolumeClaim:
+        claimName: jekyll-site
+  restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "jekyll"
+  namespace: development
+spec:
+  type: NodePort
+  selector:
+    run: "jekyll"
+  ports:
+    - port: 8080
+      targetPort: 4000
+      nodePort: 30097
